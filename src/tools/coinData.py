@@ -18,7 +18,7 @@ client_id = os.getenv("CLIENT_ID")
 
 
 def refreshFiles() -> None:
-    """Refreshes all the JSON files in \json_data\ by calling the numista API for euro coins, specifically.
+    """Refreshes all the JSON files in /json_data/ by calling the numista API for euro coins, specifically.
     This uses A LOT of API requests (30!). DO NOT RUN THIS AUTOMATICALLY, let the admins do it RARELY!!!!
     Inputs:
     - none
@@ -26,18 +26,19 @@ def refreshFiles() -> None:
     - none.
     """
 
-    resultcount = 350  # The number of results to ask numista for
+    resultcount = 50  # The number of results to ask numista for
     countries = textHelp.euro_country_list_fr
-    path = "data/json_data"
+    path = "data/json_data/"
 
     logging.info("Refreshing API files...")
     for country in countries:
+        page = 1
         search_query = "euro"
         response = requests.get(
             endpoint + "/types",
             params={
                 "q": search_query,
-                "page": 1,
+                "page": page,
                 "count": resultcount,
                 "lang": "en",
                 "issuer": f"{country}",
@@ -45,23 +46,36 @@ def refreshFiles() -> None:
             },
             headers={"Numista-API-Key": api_key},
         )
-        search_results = json.dumps(response.json(), indent=4)
-        finalpath = path + f"\{country}.json"
-        try:
+        
+        num_items = response.json()["count"]
+        num_pages = int(num_items/resultcount) + (num_items % resultcount > 0)
+        combined = []
+        while (page < num_pages):
+            search_query = "euro"
+            response = requests.get(
+                endpoint + "/types",
+                params={
+                    "q": search_query,
+                    "page": page,
+                    "count": resultcount,
+                    "lang": "en",
+                    "issuer": f"{country}",
+                    "category": "coin",
+                },
+                headers={"Numista-API-Key": api_key},
+            )
+            payload = response.json()
+            combined.extend(payload.get("types", []))
+            page += 1
+        
+        finalpath = Path(path + f"{country}.json")
+        if not finalpath.exists():
+            with open(finalpath, "x") as country_json:
+                json.dump({"types": combined}, country_json, indent=4)
+        else:
             with open(finalpath, "w") as country_json:
-                country_json.truncate(0)
-                country_json.write(search_results)
-                logging.info(f"Refreshed API for: {country}")
-        except FileNotFoundError:
-            logging.info(f"JSON file for {country} does not exist, creating one ...")
-            try:
-                with open(finalpath, "x") as country_json:
-                    country_json.write(search_results)
-                logging.info(f"Refreshed API for: {country}")
-            except Exception as error:
-                logging.error(
-                    f"JSON file for {country} could not be created because of {error}, skipping..."
-                )
+                json.dump({"types": combined}, country_json, indent=4)
+        logging.info(f"Refreshed API for: {country}")
 
     logging.info("API Refresh complete")
 
